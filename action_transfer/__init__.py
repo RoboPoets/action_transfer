@@ -41,25 +41,69 @@ class TransferToActive(bpy.types.Operator):
     bl_label = "Action Transfer: Transfer to Active"
     bl_options = {'REGISTER', 'UNDO'}
 
+    skel = None
+    action = None
+
     @classmethod
     def poll(cls, context):
         is_mode = context.active_object.mode in ['OBJECT', 'POSE']
-        is_complete = context.scene.at_data.action is not ""
+        has_action = context.scene.at_data.action is not ""
+        is_complete = False
         for mapping in context.scene.at_data.mapping:
-            if mapping.target is None or mapping.target is "":
-                is_complete = False
-        return is_mode and is_complete
+            if mapping.target != "":
+                is_complete = True
+                break
+        return is_mode and has_action and is_complete
 
     def invoke(self, context, event):
-        for obj in context.selected_objects:
-            if obj != context.active_object:
-                print(obj.data.name)
-                break
+        obj = context.active_object
+        if obj is not None and obj.select and verify_mapping(obj, False):
+            self.skel = obj
+            if self.skel.animation_data is None:
+                self.skel.animation_data_create()
+
+        self.action = bpy.data.actions[context.scene.at_data.action]
+        if self.action is None:
+            self.report({'ERROR'}, "No action selected.")
+            return {'CANCELLED'}
+        if not verify_action():
+            self.report({'ERROR'}, "Action doesn't match source skeleton's bones.")
+            return {'CANCELLED'}
+
+        name = self.action.name + ".transfer"
+        if name in bpy.data.actions:
+            bpy.data.actions[name].name += ".BCKP"
+        self.action = self.action.copy()
+        self.action.name = name
+
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
-
     def modal(self, context, event):
+        curves = self.action.fcurves
+        mapping = context.scene.at_data.mapping
+        src_bone = ""
+        tgt_bone = ""
+        is_used = False
+        for c in curves:
+            segments = c.data_path.split("\"")
+            if len(segments) != 3:
+                return {'CANCELLED'}
+            if src_bone != segments[1]:
+                src_bone = segments[1];
+                for m in mapping:
+                    if m.source == src_bone:
+                        is_used = m.target != ""
+                        tgt_bone = m.target
+                        break
+            if not is_used:
+                curves.remove(c)
+                continue
+            segments[1] = tgt_bone
+            c.data_path = "\"".join(segments)
+        if self.skel is not None:
+            self.skel.animation_data.action = self.action
+
         return {'FINISHED'}
 
 
@@ -218,13 +262,48 @@ class MainPanel(bpy.types.Panel):
 
 
 ################################################################
-# TODO documentation goes here
+# Static helper function. TODO documentation
 ################################################################
 def get_transfer_mapping_by_source(bone_name):
     for entry in bpy.context.scene.at_data.mapping:
         if entry.source == bone_name:
             return entry
     return None
+
+################################################################
+# Static helper function. TODO documentation
+################################################################
+def verify_mapping(skeleton, compare_to_source):
+    if skeleton.type != 'ARMATURE':
+        return False
+    data = bpy.context.scene.at_data.mapping
+    mapping = [m.source for m in data] if compare_to_source else [m.target for m in data]
+    bones = skeleton.data.bones
+    count = 0
+    for m in mapping:
+        if m != "":
+            count += 1
+            if m not in bones:
+                return False
+    return count != 0
+
+
+################################################################
+# Static helper function. TODO documentation
+################################################################
+def verify_action():
+    action = bpy.data.actions[bpy.context.scene.at_data.action]
+    if action is None:
+        return False
+    mapping = bpy.context.scene.at_data.mapping
+    for c in action.fcurves:
+        path = c.data_path.split("\"")
+        if len(path) != 3:
+            return False
+        if path[1] not in [m.source for m in bpy.context.scene.at_data.mapping]:
+            return False
+    return True
+
 
 #################### boring init stuff ############################
 
