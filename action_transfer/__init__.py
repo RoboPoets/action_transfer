@@ -178,7 +178,7 @@ class CollectBones(bpy.types.Operator):
                 src_bone = src_ext[idx]
                 tgt_bone = tgt_ext[idx]
                 while src_bone is not None and tgt_bone is not None:
-                    entry = get_transfer_mapping_by_source(src_bone.name)
+                    entry = mapping_entry_by_source(src_bone.name)
                     if entry is None or entry.target != "":
                         break
                     entry.target = tgt_bone.name
@@ -207,6 +207,33 @@ class CollectBones(bpy.types.Operator):
             elif "l" in name and 'foot_l' not in out_struct:
                 if 'foot_r' not in out_struct or out_struct['foot_r'] not in bone.parent_recursive:
                     out_struct['foot_l'] = bone
+
+
+################################################################
+# Resets the data to its original state, deleting the mapping
+# and all prefixes. Useful for starting over.
+################################################################
+class ClearData(bpy.types.Operator):
+    """Clear out and reset all collected mapping data."""
+    bl_idname = "anim.at_clear_data"
+    bl_label = "Action Transfer: Clear Data"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        data = context.scene.at_data
+        has_mapping = len(data.mapping) > 0
+        has_prefix = data.prefix_src != "" or data.prefix_tgt != ""
+        has_action = data.action != ""
+        return has_mapping or has_prefix or has_action
+
+    def execute(self, context):
+        data = context.scene.at_data
+        data.mapping.clear()
+        data.prefix_src = ""
+        data.prefix_tgt = ""
+        data.action = ""
+        return {'FINISHED'}
 
 
 ################################################################
@@ -245,7 +272,7 @@ class MainPanel(bpy.types.Panel):
         row = col.row(align=True)
         row.operator("anim.at_collect_bones", text="Save to File", icon='SAVE_COPY')
         row.operator("anim.at_collect_bones", text="Load from File", icon='FILE_FOLDER')
-        col.operator("anim.at_collect_bones", text="Clear All", icon='CANCEL')
+        col.operator("anim.at_clear_data", text="Clear All", icon='CANCEL')
 
         col = layout.column(align=True)
         row = col.row(align=True)
@@ -264,7 +291,7 @@ class MainPanel(bpy.types.Panel):
 ################################################################
 # Static helper function. TODO documentation
 ################################################################
-def get_transfer_mapping_by_source(bone_name):
+def mapping_entry_by_source(bone_name):
     for entry in bpy.context.scene.at_data.mapping:
         if entry.source == bone_name:
             return entry
@@ -312,6 +339,7 @@ def register():
     bpy.utils.register_class(ActionTransferData)
     bpy.utils.register_class(TransferToActive)
     bpy.utils.register_class(CollectBones)
+    bpy.utils.register_class(ClearData)
     bpy.utils.register_class(MainPanel)
 
     bpy.types.Scene.at_data = bpy.props.PointerProperty(type=ActionTransferData)
@@ -324,6 +352,7 @@ def unregister():
     bpy.utils.unregister_class(ActionTransferData)
     bpy.utils.unregister_class(TransferToActive)
     bpy.utils.unregister_class(CollectBones)
+    bpy.utils.unregister_class(ClearData)
     bpy.utils.unregister_class(MainPanel)
 
 
