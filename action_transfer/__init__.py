@@ -57,7 +57,7 @@ class TransferToActive(bpy.types.Operator):
 
     def invoke(self, context, event):
         obj = context.active_object
-        if obj is not None and obj.select and verify_mapping(obj, False):
+        if obj is not None and obj.select and validate_mapping(obj, False):
             self.skel = obj
             if self.skel.animation_data is None:
                 self.skel.animation_data_create()
@@ -66,7 +66,7 @@ class TransferToActive(bpy.types.Operator):
         if self.action is None:
             self.report({'ERROR'}, "No action selected.")
             return {'CANCELLED'}
-        if not verify_action():
+        if not validate_action():
             self.report({'ERROR'}, "Action doesn't match source skeleton's bones.")
             return {'CANCELLED'}
 
@@ -235,6 +235,65 @@ class ClearData(bpy.types.Operator):
         data.action = ""
         return {'FINISHED'}
 
+################################################################
+# Verifies that the data as it's currently set up is correct.
+# Correctness is determined by two factors:
+# 1. Mapping has to match the skeleton it's related to. There
+#    has to be at least one bone in the mapping and all bones
+#    in the mapping have to exist in the skeleton. Conversely,
+#    not all bones in the skeleton have to be mapped.
+# 2. All bone curves that exist in the selected action have
+#    to correspond to bones in the source mapping. Again,
+#    not all mapped bones need to be present in the animation.
+################################################################
+class ValidateMapping(bpy.types.Operator):
+    """Checks if the current mapping is correct and matches the animation to be transferred."""
+    bl_idname = "anim.at_validate_mapping"
+    bl_label = "Action Transfer: Validate Mapping"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    skel_src = None
+    skel_tgt = None
+
+    @classmethod
+    def poll(cls, context):
+        objs = context.selected_objects
+        if len(objs) != 2:
+            return False
+        for o in objs:
+            if o.type != 'ARMATURE':
+                return False
+        if len(context.scene.at_data.mapping) == 0:
+            return False
+        return True
+
+    def invoke(self, context, event):
+        for obj in context.selected_objects:
+            if obj.type != 'ARMATURE':
+                return {'CANCELLED'}
+            if obj == context.active_object:
+                self.skel_tgt = obj
+            else:
+                self.skel_src = obj
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if context.scene.at_data.action == "":
+            self.report({'WARNING'}, "No action selected.")
+            return {'CANCELLED'}
+        if not validate_action():
+            self.report({'WARNING'}, "Action doesn't match the source mapping.")
+            return {'CANCELLED'}
+        if not validate_mapping(self.skel_src, True):
+            self.report({'WARNING'}, "Source mapping doesn't match selected source skeleton.")
+            return {'CANCELLED'}
+        if not validate_mapping(self.skel_tgt, False):
+            self.report({'WARNING'}, "Target mapping doesn't match selected target skeleton.")
+            return {'CANCELLED'}
+        self.report({'INFO'}, "Validation succeeded.")
+        return {'FINISHED'}
+
 
 ################################################################
 # TODO documentation goes here
@@ -265,13 +324,13 @@ class MainPanel(bpy.types.Panel):
         col.label("Mapping:")
         col.operator("anim.at_collect_bones", text="Collect Bones")
         col = layout.column(align=True)
-        col.operator("anim.at_collect_bones", text="Guess Hierarchy")
-        col.operator("anim.at_collect_bones", text="Verify Mapping")
+        #col.operator("anim.at_xxx", text="Guess Hierarchy")
+        col.operator("anim.at_validate_mapping", text="Validate Mapping")
 
         col = layout.column(align=True)
         row = col.row(align=True)
-        row.operator("anim.at_collect_bones", text="Save to File", icon='SAVE_COPY')
-        row.operator("anim.at_collect_bones", text="Load from File", icon='FILE_FOLDER')
+        #row.operator("anim.at_xxx", text="Save to File", icon='SAVE_COPY')
+        #row.operator("anim.at_xxx", text="Load from File", icon='FILE_FOLDER')
         col.operator("anim.at_clear_data", text="Clear All", icon='CANCEL')
 
         col = layout.column(align=True)
@@ -300,7 +359,7 @@ def mapping_entry_by_source(bone_name):
 ################################################################
 # Static helper function. TODO documentation
 ################################################################
-def verify_mapping(skeleton, compare_to_source):
+def validate_mapping(skeleton, compare_to_source):
     if skeleton.type != 'ARMATURE':
         return False
     data = bpy.context.scene.at_data.mapping
@@ -318,8 +377,11 @@ def verify_mapping(skeleton, compare_to_source):
 ################################################################
 # Static helper function. TODO documentation
 ################################################################
-def verify_action():
-    action = bpy.data.actions[bpy.context.scene.at_data.action]
+def validate_action():
+    key = bpy.context.scene.at_data.action
+    if key not in bpy.data.actions:
+        return False
+    action = bpy.data.actions[key]
     if action is None:
         return False
     mapping = bpy.context.scene.at_data.mapping
@@ -340,6 +402,7 @@ def register():
     bpy.utils.register_class(TransferToActive)
     bpy.utils.register_class(CollectBones)
     bpy.utils.register_class(ClearData)
+    bpy.utils.register_class(ValidateMapping)
     bpy.utils.register_class(MainPanel)
 
     bpy.types.Scene.at_data = bpy.props.PointerProperty(type=ActionTransferData)
@@ -353,6 +416,7 @@ def unregister():
     bpy.utils.unregister_class(TransferToActive)
     bpy.utils.unregister_class(CollectBones)
     bpy.utils.unregister_class(ClearData)
+    bpy.utils.unregister_class(ValidateMapping)
     bpy.utils.unregister_class(MainPanel)
 
 
