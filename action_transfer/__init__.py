@@ -14,7 +14,7 @@ bl_info = {
     "category": "Animation"
 }
 
-import bpy
+import bpy, json, collections
 
 ################################################################
 # TODO documentation goes here
@@ -217,7 +217,7 @@ class ClearData(bpy.types.Operator):
     """Clear out and reset all collected mapping data."""
     bl_idname = "anim.at_clear_data"
     bl_label = "Action Transfer: Clear Data"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
 
     @classmethod
     def poll(cls, context):
@@ -233,6 +233,7 @@ class ClearData(bpy.types.Operator):
         data.prefix_src = ""
         data.prefix_tgt = ""
         data.action = ""
+        context.area.tag_redraw()
         return {'FINISHED'}
 
 ################################################################
@@ -250,7 +251,7 @@ class ValidateMapping(bpy.types.Operator):
     """Checks if the current mapping is correct and matches the animation to be transferred."""
     bl_idname = "anim.at_validate_mapping"
     bl_label = "Action Transfer: Validate Mapping"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
 
     skel_src = None
     skel_tgt = None
@@ -296,6 +297,58 @@ class ValidateMapping(bpy.types.Operator):
 
 
 ################################################################
+# Saves the current bone mapping between source and target
+# skeletons to a JSON-formatted file. This functionality is
+# intended to provide a method of working with and managing
+# different, reusable mapping schemes between different rigs.
+################################################################
+class SaveToFile(bpy.types.Operator):
+    """Save the current mapping to JSON-formatted file."""
+    bl_idname = "anim.at_save_mapping"
+    bl_label = "Save Mapping"
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+
+    filepath = bpy.props.StringProperty(subtype="FILE_PATH")
+
+    @classmethod
+    def poll(cls, context):
+        data = context.scene.at_data
+        if len(data.mapping) == 0:
+            return False
+        has_source = False
+        has_target = False
+        for m in data.mapping:
+            if m.source != "":
+                has_source = True
+            if m.target != "":
+                has_target = True
+            if has_source and has_target:
+                return True
+        return False
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        data = context.scene.at_data
+        bones = collections.OrderedDict()
+        for m in data.mapping:
+            bones[m.source] = m.target
+        mapping = collections.OrderedDict()
+        mapping["prefix_src"] = data.prefix_src
+        mapping["prefix_tgt"] = data.prefix_tgt
+        mapping["mapping"] = bones
+
+        if not self.filepath.endswith(".json"):
+            self.filepath += ".json"
+        file = open(self.filepath, 'w')
+        file.write(json.dumps(mapping, indent=4))
+        file.close()
+        return {'FINISHED'}
+
+
+################################################################
 # TODO documentation goes here
 ################################################################
 class MainPanel(bpy.types.Panel):
@@ -329,7 +382,7 @@ class MainPanel(bpy.types.Panel):
 
         col = layout.column(align=True)
         row = col.row(align=True)
-        #row.operator("anim.at_xxx", text="Save to File", icon='SAVE_COPY')
+        row.operator("anim.at_save_mapping", text="Save to File", icon='SAVE_COPY')
         #row.operator("anim.at_xxx", text="Load from File", icon='FILE_FOLDER')
         col.operator("anim.at_clear_data", text="Clear All", icon='CANCEL')
 
@@ -403,6 +456,7 @@ def register():
     bpy.utils.register_class(CollectBones)
     bpy.utils.register_class(ClearData)
     bpy.utils.register_class(ValidateMapping)
+    bpy.utils.register_class(SaveToFile)
     bpy.utils.register_class(MainPanel)
 
     bpy.types.Scene.at_data = bpy.props.PointerProperty(type=ActionTransferData)
@@ -417,6 +471,7 @@ def unregister():
     bpy.utils.unregister_class(CollectBones)
     bpy.utils.unregister_class(ClearData)
     bpy.utils.unregister_class(ValidateMapping)
+    bpy.utils.unregister_class(SaveToFile)
     bpy.utils.unregister_class(MainPanel)
 
 
