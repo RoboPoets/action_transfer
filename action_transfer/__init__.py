@@ -14,7 +14,7 @@ bl_info = {
     "category": "Animation"
 }
 
-import bpy, json, collections
+import bpy, json, collections, os
 
 ################################################################
 # TODO documentation goes here
@@ -338,7 +338,7 @@ class SaveToFile(bpy.types.Operator):
         mapping = collections.OrderedDict()
         mapping["prefix_src"] = data.prefix_src
         mapping["prefix_tgt"] = data.prefix_tgt
-        mapping["mapping"] = bones
+        mapping["bones"] = bones
 
         if not self.filepath.endswith(".json"):
             self.filepath += ".json"
@@ -346,6 +346,47 @@ class SaveToFile(bpy.types.Operator):
         file.write(json.dumps(mapping, indent=4))
         file.close()
         return {'FINISHED'}
+
+
+################################################################
+# Loads a saved bone mapping between source and target
+# skeletons from a JSON-formatted file. This functionality is
+# intended to provide a method of working with and managing
+# different, reusable mapping schemes between different rigs.
+################################################################
+class LoadFromFile(bpy.types.Operator):
+    """Load mapping from JSON-formatted file."""
+    bl_idname = "anim.at_load_mapping"
+    bl_label = "Load Mapping"
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+
+    filepath = bpy.props.StringProperty(subtype="FILE_PATH")
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        try:
+            file = open(self.filepath)
+            mapping = json.load(file, object_pairs_hook=collections.OrderedDict)
+        except FileNotFoundError:
+            self.report({'WARNING'}, "The mapping file doesn't exist.")
+        except json.JSONDecodeError:
+            self.report({'WARNING'}, "The mapping file contains invalid JSON.")
+            file.close()
+        else:
+            file.close()
+            data = context.scene.at_data
+            data.mapping.clear()
+            data.prefix_src = mapping["prefix_src"]
+            data.prefix_tgt = mapping["prefix_tgt"]
+            for s, t in mapping["bones"].items():
+                m = data.mapping.add()
+                m.source = s
+                m.target = t
+            return {'FINISHED'}
+        return {'CANCELLED'}
 
 
 ################################################################
@@ -383,7 +424,7 @@ class MainPanel(bpy.types.Panel):
         col = layout.column(align=True)
         row = col.row(align=True)
         row.operator("anim.at_save_mapping", text="Save to File", icon='SAVE_COPY')
-        #row.operator("anim.at_xxx", text="Load from File", icon='FILE_FOLDER')
+        row.operator("anim.at_load_mapping", text="Load from File", icon='FILE_FOLDER')
         col.operator("anim.at_clear_data", text="Clear All", icon='CANCEL')
 
         col = layout.column(align=True)
@@ -457,6 +498,7 @@ def register():
     bpy.utils.register_class(ClearData)
     bpy.utils.register_class(ValidateMapping)
     bpy.utils.register_class(SaveToFile)
+    bpy.utils.register_class(LoadFromFile)
     bpy.utils.register_class(MainPanel)
 
     bpy.types.Scene.at_data = bpy.props.PointerProperty(type=ActionTransferData)
@@ -472,6 +514,7 @@ def unregister():
     bpy.utils.unregister_class(ClearData)
     bpy.utils.unregister_class(ValidateMapping)
     bpy.utils.unregister_class(SaveToFile)
+    bpy.utils.unregister_class(LoadFromFile)
     bpy.utils.unregister_class(MainPanel)
 
 
