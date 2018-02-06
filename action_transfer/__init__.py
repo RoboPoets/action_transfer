@@ -210,6 +210,44 @@ class CollectBones(bpy.types.Operator):
 
 
 ################################################################
+# If a mapping is incomplete, try to fill in the missing bones.
+#
+# This operator works by first examining the hierarchy of both
+# skeletons and mapping bones to each other when their relation
+# is relatively unambiguous. Example: if both skeletons have their
+# right foot mapped and both of those contain only one child, it
+# is a pretty safe bet that these are the toe bones and they
+# map to each other.
+#
+# If there are bones left unmapped after this first step, a
+# number of heuristic methods are used for inferring possible
+# matches. These work mainly on the names of bones and on
+# probabilities that they map to each other if their names share
+# a sufficient amount of similarity.
+#
+# Note that success is never guaranteed and if the skeletons
+# differ too much from another, applying this operator might
+# not yield any useful results.
+################################################################
+class GuessHierarchy(bpy.types.Operator):
+    """Try to associate unmapped bones from the target skeleton with bones from the source skeleton."""
+    bl_idname = "anim.at_guess_hierarchy"
+    bl_label = "Action Transfer: Guess Hierarchy"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return False
+
+    def invoke(self, context, event):
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        return {'FINISHED'}
+
+
+################################################################
 # Resets the data to its original state, deleting the mapping
 # and all prefixes. Useful for starting over.
 ################################################################
@@ -235,6 +273,7 @@ class ClearData(bpy.types.Operator):
         data.action = ""
         context.area.tag_redraw()
         return {'FINISHED'}
+
 
 ################################################################
 # Verifies that the data as it's currently set up is correct.
@@ -373,7 +412,7 @@ class LoadFromFile(bpy.types.Operator):
         except FileNotFoundError:
             self.report({'WARNING'}, "The mapping file doesn't exist.")
         except json.JSONDecodeError:
-            self.report({'WARNING'}, "The mapping file contains invalid JSON.")
+            self.report({'WARNING'}, "The mapping file does not contain valid JSON.")
             file.close()
         else:
             file.close()
@@ -418,7 +457,7 @@ class MainPanel(bpy.types.Panel):
         col.label("Mapping:")
         col.operator("anim.at_collect_bones", text="Collect Bones")
         col = layout.column(align=True)
-        #col.operator("anim.at_xxx", text="Guess Hierarchy")
+        col.operator("anim.at_guess_hierarchy", text="Guess Hierarchy")
         col.operator("anim.at_validate_mapping", text="Validate Mapping")
 
         col = layout.column(align=True)
@@ -449,6 +488,7 @@ def mapping_entry_by_source(bone_name):
         if entry.source == bone_name:
             return entry
     return None
+
 
 ################################################################
 # Static helper function. TODO documentation
@@ -495,6 +535,7 @@ def register():
     bpy.utils.register_class(ActionTransferData)
     bpy.utils.register_class(TransferToActive)
     bpy.utils.register_class(CollectBones)
+    bpy.utils.register_class(GuessHierarchy)
     bpy.utils.register_class(ClearData)
     bpy.utils.register_class(ValidateMapping)
     bpy.utils.register_class(SaveToFile)
@@ -511,6 +552,7 @@ def unregister():
     bpy.utils.unregister_class(ActionTransferData)
     bpy.utils.unregister_class(TransferToActive)
     bpy.utils.unregister_class(CollectBones)
+    bpy.utils.unregister_class(GuessHierarchy)
     bpy.utils.unregister_class(ClearData)
     bpy.utils.unregister_class(ValidateMapping)
     bpy.utils.unregister_class(SaveToFile)
